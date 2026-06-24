@@ -1,3 +1,4 @@
+// Defines the detached task runtime contract and spawn options.
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type {
   TaskDeliveryState,
@@ -22,6 +23,7 @@ export type DetachedTaskCreateParams = {
   childSessionKey?: string;
   parentTaskId?: string;
   agentId?: string;
+  requesterAgentId?: string;
   runId?: string;
   label?: string;
   task: string;
@@ -78,16 +80,31 @@ export type DetachedTaskFailParams = {
   terminalSummary?: string | null;
 };
 
+export type DetachedTaskFinalizeParams = {
+  runId: string;
+  runtime?: TaskRuntime;
+  sessionKey?: string;
+  status: Extract<TaskStatus, "succeeded" | "failed" | "timed_out" | "cancelled">;
+  endedAt: number;
+  lastEventAt?: number;
+  error?: string;
+  progressSummary?: string | null;
+  terminalSummary?: string | null;
+  terminalOutcome?: TaskTerminalOutcome | null;
+};
+
 export type DetachedTaskDeliveryStatusParams = {
   runId: string;
   runtime?: TaskRuntime;
   sessionKey?: string;
   deliveryStatus: TaskDeliveryStatus;
+  error?: string;
 };
 
 export type DetachedTaskCancelParams = {
   cfg: OpenClawConfig;
   taskId: string;
+  reason?: string;
 };
 
 export type DetachedTaskCancelResult = {
@@ -97,11 +114,23 @@ export type DetachedTaskCancelResult = {
   task?: TaskRecord;
 };
 
+export type DetachedTaskRecoveryAttemptParams = {
+  taskId: string;
+  runtime: TaskRuntime;
+  task: TaskRecord;
+  now: number;
+};
+
+export type DetachedTaskRecoveryAttemptResult = {
+  recovered: boolean;
+};
+
 export type DetachedTaskLifecycleRuntime = {
-  createQueuedTaskRun: (params: DetachedTaskCreateParams) => TaskRecord;
-  createRunningTaskRun: (params: DetachedRunningTaskCreateParams) => TaskRecord;
+  createQueuedTaskRun: (params: DetachedTaskCreateParams) => TaskRecord | null;
+  createRunningTaskRun: (params: DetachedRunningTaskCreateParams) => TaskRecord | null;
   startTaskRunByRunId: (params: DetachedTaskStartParams) => TaskRecord[];
   recordTaskRunProgressByRunId: (params: DetachedTaskProgressParams) => TaskRecord[];
+  finalizeTaskRunByRunId?: (params: DetachedTaskFinalizeParams) => TaskRecord[];
   completeTaskRunByRunId: (params: DetachedTaskCompleteParams) => TaskRecord[];
   failTaskRunByRunId: (params: DetachedTaskFailParams) => TaskRecord[];
   setDetachedTaskDeliveryStatusByRunId: (params: DetachedTaskDeliveryStatusParams) => TaskRecord[];
@@ -112,6 +141,13 @@ export type DetachedTaskLifecycleRuntime = {
   cancelDetachedTaskRunById: (
     params: DetachedTaskCancelParams,
   ) => Promise<DetachedTaskCancelResult>;
+  /**
+   * Give a registered detached runtime one last chance to recover a stale task
+   * before core marks it lost during maintenance.
+   */
+  tryRecoverTaskBeforeMarkLost?: (
+    params: DetachedTaskRecoveryAttemptParams,
+  ) => DetachedTaskRecoveryAttemptResult | Promise<DetachedTaskRecoveryAttemptResult>;
 };
 
 export type DetachedTaskLifecycleRuntimeRegistration = {

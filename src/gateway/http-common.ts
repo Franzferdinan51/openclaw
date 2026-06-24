@@ -1,4 +1,10 @@
+// Shared Gateway HTTP helpers handle small JSON/text responses, SSE headers,
+// body-size errors, and client disconnect aborts.
 import type { IncomingMessage, ServerResponse } from "node:http";
+import {
+  logRejectedLargePayload,
+  parseContentLengthHeader,
+} from "../logging/diagnostic-payload.js";
 import type { GatewayAuthResult } from "./auth.js";
 import { readJsonBody } from "./hooks.js";
 
@@ -70,6 +76,20 @@ export function sendInvalidRequest(res: ServerResponse, message: string) {
   });
 }
 
+export function buildMissingScopeForbiddenBody(missingScope: string | undefined) {
+  return {
+    ok: false,
+    error: {
+      type: "forbidden",
+      message: `missing scope: ${missingScope}`,
+    },
+  };
+}
+
+export function sendMissingScopeForbidden(res: ServerResponse, missingScope: string | undefined) {
+  sendJson(res, 403, buildMissingScopeForbiddenBody(missingScope));
+}
+
 export async function readJsonBodyOrError(
   req: IncomingMessage,
   res: ServerResponse,
@@ -78,6 +98,13 @@ export async function readJsonBodyOrError(
   const body = await readJsonBody(req, maxBytes);
   if (!body.ok) {
     if (body.error === "payload too large") {
+      const contentLength = parseContentLengthHeader(req.headers?.["content-length"]);
+      logRejectedLargePayload({
+        surface: "gateway.http.json",
+        limitBytes: maxBytes,
+        reason: "json_body_limit",
+        ...(contentLength !== undefined ? { bytes: contentLength } : {}),
+      });
       sendJson(res, 413, {
         error: { message: "Payload too large", type: "invalid_request_error" },
       });

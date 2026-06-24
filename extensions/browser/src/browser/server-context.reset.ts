@@ -1,8 +1,11 @@
+/**
+ * Browser profile reset operations for local managed profiles.
+ */
 import fs from "node:fs";
 import type { ResolvedBrowserProfile } from "./config.js";
 import { BrowserResetUnsupportedError } from "./errors.js";
 import { getBrowserProfileCapabilities } from "./profile-capabilities.js";
-import { getPwAiModule } from "./pw-ai-module.js";
+import { closePlaywrightBrowserConnectionForProfile } from "./server-context.lifecycle.js";
 import type { ProfileRuntimeState } from "./server-context.types.js";
 import { movePathToTrash } from "./trash.js";
 
@@ -18,15 +21,7 @@ type ResetOps = {
   resetProfile: () => Promise<{ moved: boolean; from: string; to?: string }>;
 };
 
-async function closePlaywrightBrowserConnectionForProfile(cdpUrl?: string): Promise<void> {
-  try {
-    const mod = await getPwAiModule({ mode: "soft" });
-    await mod?.closePlaywrightBrowserConnection(cdpUrl ? { cdpUrl } : undefined);
-  } catch {
-    // ignore
-  }
-}
-
+/** Builds the reset-profile operation for one resolved browser profile. */
 export function createProfileResetOps({
   profile,
   getProfileState,
@@ -44,6 +39,8 @@ export function createProfileResetOps({
 
     const userDataDir = resolveOpenClawUserDataDir(profile.name);
     const profileState = getProfileState();
+    profileState.managedLaunchFailure = undefined;
+    profileState.ensureBrowserAvailable = null;
     const httpReachable = await isHttpReachable(300);
     if (httpReachable && !profileState.running) {
       // Port in use but not by us - kill it.
